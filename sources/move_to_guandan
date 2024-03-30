@@ -2,58 +2,186 @@ module move_to_guandan::message {
     use std::error;
     use std::signer;
     use std::string;
+    use aptos_std::simple_map::{SimpleMap,Self};
     use aptos_framework::event;
 
-    //:!:>resource
-    struct MessageHolder has key {
-        message: string::String,
-    }
-    //<:!:resource
-
-    #[event]
-    struct MessageChange has drop, store {
-        account: address,
-        from_message: string::String,
-        to_message: string::String,
+    struct Card has store {
+        id: u8,
+        color: u8,
+        num: u8,
+        owner: address,
+        status: bool
     }
 
-    /// There is no message present
-    const ENO_MESSAGE: u64 = 0;
-
-    #[view]
-    public fun get_message(addr: address): string::String acquires MessageHolder {
-        assert!(exists<MessageHolder>(addr), error::not_found(ENO_MESSAGE));
-        borrow_global<MessageHolder>(addr).message
+    struct CardArray has store {
+        sender: address,
+        cards: vector<Card>
     }
 
-    public entry fun set_message(account: signer, message: string::String)
-    acquires MessageHolder {
-        let account_addr = signer::address_of(&account);
-        if (!exists<MessageHolder>(account_addr)) {
-            move_to(&account, MessageHolder {
-                message,
-            })
-        } else {
-            let old_message_holder = borrow_global_mut<MessageHolder>(account_addr);
-            let from_message = old_message_holder.message;
-            event::emit(MessageChange {
-                account: account_addr,
-                from_message,
-                to_message: copy message,
-            });
-            old_message_holder.message = message;
+    struct Player has store {
+        addr: address,
+        level: u8,
+        teammate: address,
+        maxcard: u8,
+        usedcard: u8
+    }
+
+    struct Round has store {
+        rid: u8,
+        rlevel: u8,
+        lastnum: u8,
+        lasttype: u8,
+        lastsender: address,
+        isswap: bool,
+        isover: bool
+    }
+
+    struct Game has store {
+        gid: u256,
+        rid: u8,
+        playeraddrs: vector<address>,
+        lastorder: vectore<address>,
+        winer: address,
+        status: u8
+    }
+
+    const GLOBAL_SALT: u8 = 0;
+
+    let playermap:SimpleMap<u256,Player> = simple_map::create();
+    let gamemap:SimpleMap<u256,Game> = simple_map::create();
+    let cardmap:SimpleMap<address,vector<Card>> = simple_map::create();
+    let gameround:SimpleMap<u256,vector<Round>> = simple_map::create();
+
+    let deck = vector::empty<u8>();
+
+    public entry fun init() {
+        for(i in 0..108){
+            vector::push_back(&mut deck,i);
         }
     }
 
-    #[test(account = @0x1)]
-    public entry fun sender_can_set_message(account: signer) acquires MessageHolder {
-        let addr = signer::address_of(&account);
-        aptos_framework::account::create_account_for_test(addr);
-        set_message(account, string::utf8(b"Hello, Blockchain"));
-
-        assert!(
-            get_message(addr) == string::utf8(b"Hello, Blockchain"),
-            ENO_MESSAGE
-        );
+    #[view]
+    public fun judgeBoom(cards: vector<Card>): bool {
+        let len = vector::length<Card>(&mut cards);
+        for(i in 0..len){
+            let &c1 = vector::borrow<Card>(&cards,i);
+            let &c2 = vector::borrow<Card>(&cards,i+1);
+            if(c1.num != c2.num) return false;
+        }
+        return true;
     }
+
+
+    #[view]
+    public fun judgeStraight(cards: vector<Card>): (bool,bool) {
+        let len = vector::length<Card>(&mut cards);
+        if(len != 5) return (false,false);
+        bool isValid = true;
+        bool isSameColor = true;
+        for(i in 0..4){
+            let &c1 = vector::borrow<Card>(&cards,i);
+            let &c2 = vector::borrow<Card>(&cards,i+1);
+            if(c1.num != c2.num){
+                isValid = false;
+                break;
+            }
+            if(c1.color != c2.color) isSameColor = false;
+        }
+        return (isValid,isSameColor);
+    }
+
+    #[view]
+    public fun judgeTriplePair(cards: vector<Card>): bool {
+        bool res = true;
+        u8 i = 0;
+        while(i < 5){
+            let &c1 = vector::borrow<Card>(&cards,i);
+            let &c2 = vector::borrow<Card>(&cards,i+1);
+            if(c1.num != c2.num){
+                res = false;
+                break;
+            }
+            i = i + 2;
+        }
+
+        let &card0 = vector::borrow<Card>(&cards,0);
+        let &card2 = vector::borrow<Card>(&cards,2);
+        let &card4 = vector::borrow<Card>(&cards,4);
+        if(card0.num == card2.num || card0.num == card4.num || card2.num == card4.num) res = false;
+        return res;
+    }
+
+    #[view]
+    public fun judgeCardType(cards: vector<Card>): (u8,u8) {
+        let len = vector::length<Card>(&mut cards);
+        let &card0 = vector::borrow<Card>(&cards,0);
+        let &card1 = vector::borrow<Card>(&cards,1);
+        let &card2 = vector::borrow<Card>(&cards,2);
+        let &card3 = vector::borrow<Card>(&cards,3);
+        let &card4 = vector::borrow<Card>(&cards,4);
+        if(len == 1){
+            return (1,card0.num);
+        }else if(len == 2){
+            if(card0.num == card1.num) return (2,card0.num);
+            else return (0,0);
+        }else if(len == 3){
+            if((card0.num == card1.num) && (card0.num == card2.num)) return (3,card0.num);
+            else return (0,0);
+        }else if(len == 4){
+            if(judgeBoom(cards)) return (4,card0.num);
+            else if(card0.num + card1.num + card2.num + card3.num == 62) return (5,16);
+            else return (0,0); 
+        }else if(len == 5){
+            if(judgeBoom(cards)) return (6,card0.num);
+            if(card0.num == card1.num && card0.num == card2.num && card3.num == card4.num) return (7,card0.num);
+            bool isValid;
+            bool isSameColor;
+            (isValid,isSameColor) = judgeStraight(cards);
+            if(isValid){
+                if(isSameColor) return (8,card0.num);
+                else return (9,card0.num);
+            }
+            return (0,0);
+        }else if(len == 6){
+            if(judgeBoom(cards)) return (10,card0.num);
+            if(judgeTriplePair(cards)) return (11,card0.num);
+            if(judgeTwoTripleSingle(cards)) return (12,card0.num);
+        }else return (0,0);
+    }
+
+    public fun registerPlayer(playerAddr: address) {
+        assert!(simple_map::contains_key(&mut playermap,&playerAddr) == false);
+        let player = Player {
+            addr: playerAddr,
+            level: 0,
+            teammate: playerAddr,
+            maxcard: 0,
+            usedcard: 0
+        }
+        simple_map::add(&mut playermap,playerAddr,player);
+    }
+
+    public fun randomTeammate(salt: u256) {
+        // radomness
+    }
+
+    public fun checkGameId(gid: u256): bool {
+        
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
 }
