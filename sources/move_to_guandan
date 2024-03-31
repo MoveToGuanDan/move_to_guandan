@@ -4,11 +4,12 @@ module move_to_guandan::message {
     use std::string;
     use aptos_std::simple_map::{SimpleMap,Self};
     use aptos_framework::event;
+    use aptos_framework::randomness;
 
     struct Card has store {
-        id: u8,
-        color: u8,
-        num: u8,
+        id: u64,
+        color: u64,
+        num: u64,
         owner: address,
         status: bool
     }
@@ -20,39 +21,39 @@ module move_to_guandan::message {
 
     struct Player has store {
         addr: address,
-        level: u8,
+        level: u64,
         teammate: address,
-        maxcard: u8,
-        usedcard: u8
+        maxcard: u64,
+        usedcard: u64
     }
 
     struct Round has store {
-        rid: u8,
-        rlevel: u8,
-        lastnum: u8,
-        lasttype: u8,
+        rid: u64,
+        rlevel: u64,
+        lastnum: u64,
+        lasttype: u64,
         lastsender: address,
         isswap: bool,
         isover: bool
     }
 
     struct Game has store {
-        gid: u256,
-        rid: u8,
+        gid: u64,
+        rid: u64,
         playeraddrs: vector<address>,
         lastorder: vectore<address>,
         winer: address,
-        status: u8
+        status: u64
     }
 
-    const GLOBAL_SALT: u8 = 0;
+    const GLOBAL_SALT: u64 = 0;
 
     let playermap:SimpleMap<address,Player> = simple_map::create();
-    let gamemap:SimpleMap<u256,Game> = simple_map::create();
+    let gamemap:SimpleMap<u64,Game> = simple_map::create();
     let cardmap:SimpleMap<address,vector<Card>> = simple_map::create();
-    let gameround:SimpleMap<u256,vector<Round>> = simple_map::create();
+    let gameround:SimpleMap<u64,vector<Round>> = simple_map::create();
 
-    let deck = vector::empty<u8>();
+    let deck = vector::empty<u64>();
 
     public entry fun init() {
         for(i in 0..108){
@@ -93,7 +94,7 @@ module move_to_guandan::message {
     #[view]
     public fun judgeTriplePair(cards: vector<Card>): bool {
         bool res = true;
-        let i:u8 = 0;
+        let i:u64 = 0;
         while(i < 5){
             let &c1 = vector::borrow<Card>(&cards,i);
             let &c2 = vector::borrow<Card>(&cards,i+1);
@@ -112,7 +113,7 @@ module move_to_guandan::message {
     }
 
     #[view]
-    public fun judgeCardType(cards: vector<Card>): (u8,u8) {
+    public fun judgeCardType(cards: vector<Card>): (u64,u64) {
         let len = vector::length<Card>(&mut cards);
         let &card0 = vector::borrow<Card>(&cards,0);
         let &card1 = vector::borrow<Card>(&cards,1);
@@ -161,20 +162,20 @@ module move_to_guandan::message {
         simple_map::add(&mut playermap,playerAddr,player);
     }
 
-    public fun randomTeammate(salt: u256) {
-        //TODO
-        // radomness
+    public fun randomTeammate(salt: u64): u64 {
+        let randomNum = randomness::u64_integer() % 3;
+        return randomNum;
     }
 
     #[view]
-    public fun checkGameId(gid: u256): bool {
+    public fun checkGameId(gid: u64): bool {
         if(simple_map::contains_key(&gamemap,&gid) == false) return false;
         let &g = simple_map::borrow(&gamemap,&gid);
         if(g.status == 0 || g.status == 3) return false;
         else return true;
     }
 
-    public fun initGame(id: u256,playerAddrs: vector<address>,salt :u256) {
+    public fun initGame(id: u64,playerAddrs: vector<address>,salt :u64) {
         assert!(simple_map::contains_key(&gamemap,&id) == false);
         let g = Game {
             gid: id,
@@ -211,9 +212,9 @@ module move_to_guandan::message {
         }
     }
 
-    public fun getCard(cardnum: u8): (u8,u8) {
-        let color:u8 = cardnum % 54 / 13;
-        let num:u8 = (cardnum % 54) % 13 + 2;
+    public fun getCard(cardnum: u64): (u64,u64) {
+        let color:u64 = cardnum % 54 / 13;
+        let num:u64 = (cardnum % 54) % 13 + 2;
         if(color == 4) num = num + 13;
         return (color,num);
     }
@@ -231,17 +232,17 @@ module move_to_guandan::message {
     public fun randomHandCard(playerAddrs: vector<address>) {
         let len = vector::length(&deck);
         assert!(len == 128);
-        let remaining:u8 = 128;
+        let remaining:u64 = 128;
         for(i in 0..27){
             for(j in 0..4){
-                //TODO
-                let randomIndex = 1;
-                u8 mut cardNum = vector::borrow_mut(&deck,randomIndex);
+                let randomIndex = randomness::u64_integer() % remaining;
+                let mut cardNum:u64 = vector::borrow_mut(&deck,randomIndex);
                 let temp = &cardNum;
-                u8 lastNum = vector::borrow(&deck,remaining-1);
+                let lastNum:u64 = vector::borrow(&deck,remaining-1);
                 cardNum = lastNum;
                 remaining = remaining - 1;
-                u8 c,n;
+                let c:u64;
+                let n:u64;
                 (c,n) = getCard(temp);
                 let ownerAddr = vector::borrow(&playerAddrs,j);
                 let cardOwner = simple_map::borrow(&playermap,&ownerAddr);
@@ -258,7 +259,7 @@ module move_to_guandan::message {
         }
     }
 
-    public fun initRound(gameid: u256,playerAddrs: vector<address>) {
+    public fun initRound(gameid: u64,playerAddrs: vector<address>) {
         let mut g = simple_map::borrow_mut(&gamemap,gameid);
         assert!(g.status == 1 || g.status == 2);
         let r = Round {
@@ -276,7 +277,7 @@ module move_to_guandan::message {
         randomHandCard(playerAddrs);
     }
 
-    public fun checkRoundId(gameid: u256,roundid: u8): bool {
+    public fun checkRoundId(gameid: u64,roundid: u64): bool {
         if(checkGameId(gameid) == false) return false;
         let roundvec = simple_map::borrow(&gameround,gameid);
         let r = vector::borrow(&roundvec,roundid);
@@ -284,13 +285,13 @@ module move_to_guandan::message {
         else return false;
     }
 
-    public fun sendCardArray(gameid: u256,roundid: u8,sender: address,cardArrs: CardArray): bool {
+    public fun sendCardArray(gameid: u64,roundid: u64,sender: address,cardArrs: CardArray): bool {
         let len = vector::length(&cardArrs.cards);
         if(len == 0) return true;
         assert!(checkRoundId(gameid,roundid) == true);
         assert!(checkCardArray(sender,cardArrs) == true);
-        let ctype: u8;
-        let cnum: u8;
+        let ctype: u64;
+        let cnum: u64;
         (ctype,cnum) = judgeCardType(cardArrs.cards);
         if(ctype == 0) return false;
         let mut r = simple_map::borrow_mut(&gameround,&gameid,&roundid);
@@ -308,7 +309,7 @@ module move_to_guandan::message {
         return true;
     }
 
-    public fun swapCard(gameid: u256,roundid: u8,fromAddr: vector<address>,toAddr: vector<address>,cards: vector<Card>,flag: bool): bool {
+    public fun swapCard(gameid: u64,roundid: u64,fromAddr: vector<address>,toAddr: vector<address>,cards: vector<Card>,flag: bool): bool {
         assert!(checkRoundId(gameid,roundid) == true);
         let fromlen = vector::length(&fromAddr);
         let tolen = vector::length(&toAddr);
@@ -370,7 +371,7 @@ module move_to_guandan::message {
         return res;
     }
 
-    public fun roundProcess(gameid: u256,roundid: u8,senderAddrs: vector<address>,arrays: vector<CardArray>): (bool,vector<address>) {
+    public fun roundProcess(gameid: u64,roundid: u64,senderAddrs: vector<address>,arrays: vector<CardArray>): (bool,vector<address>) {
         assert!(checkRoundId(gameid,roundid) == true);
         let senderlen = vector::length(&senderAddrs);
         let arraylen = vector::length(&arrays);
@@ -417,7 +418,7 @@ module move_to_guandan::message {
         return (true,temporder);
     }
 
-    public fun gameResultQuery(gameid: u256): (bool,address,address) {
+    public fun gameResultQuery(gameid: u64): (bool,address,address) {
         assert!(checkGameId(gameid) == true);
         let g = simple_map::borrow(&gamemap,gameid);
         if(g.status != 3) return(false,address(0),address(0));
