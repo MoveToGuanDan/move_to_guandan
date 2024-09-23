@@ -1,15 +1,14 @@
 [package]
 name = "move_to_guandan"
-version = "1.0.0"
+version = "0.0.1"
 authors = []
 
 [addresses]
 move_to_guandan = "_"
+
 [dev-addresses]
 
-[dependencies.AptosFramework]
-git = "https://github.com/aptos-labs/aptos-core.git"
-rev = "mainnet"
-subdir = "aptos-move/framework/aptos-framework"
+[dependencies]
+AptosFramework = { local = "../aptos-core/aptos-move/framework/aptos-framework" }
 
 [dev-dependencies]
